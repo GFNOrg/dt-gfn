@@ -91,66 +91,10 @@ class DtreeDecisionTreeClassifier(BaseEstimator, ClassifierMixin):
             else:
                 return node['right']
 
-class DtreeRandomForestClassifier(BaseEstimator, ClassifierMixin):
-    def __init__(self, n_estimators: int = 100, max_depth: int = 5, min_samples_split: int = 2, 
-                 a: float = 1.0, b: float = 2.0, alpha: float = 0.01, n_jobs: int = -1, 
-                 max_features: Union[str, int, float] = 'sqrt', bootstrap: bool = True):
-        self.n_estimators = n_estimators
-        self.max_depth = max_depth
-        self.min_samples_split = min_samples_split
-        self.a = a
-        self.b = b
-        self.alpha = alpha
-        self.n_jobs = n_jobs
-        self.max_features = max_features
-        self.bootstrap = bootstrap
-        self.trees = []
+    def num_nodes(self) -> int:
+        return self._count_nodes(self.tree)
 
-    def fit(self, X: np.ndarray, y: np.ndarray):
-        self.n_features = X.shape[1]
-        self.n_classes = len(np.unique(y))
-        
-        if isinstance(self.max_features, str):
-            if self.max_features == 'sqrt':
-                self.max_features = int(np.sqrt(self.n_features))
-            elif self.max_features == 'log2':
-                self.max_features = int(np.log2(self.n_features))
-        elif isinstance(self.max_features, float):
-            self.max_features = int(self.max_features * self.n_features)
-        
-        self.trees = Parallel(n_jobs=self.n_jobs)(
-            delayed(self._build_tree)(X, y) for _ in range(self.n_estimators)
-        )
-        return self
-
-    def _build_tree(self, X: np.ndarray, y: np.ndarray) -> DtreeDecisionTreeClassifier:
-        tree = DtreeDecisionTreeClassifier(
-            max_depth=self.max_depth,
-            min_samples_split=self.min_samples_split,
-            a=self.a,
-            b=self.b,
-            alpha=self.alpha
-        )
-        if self.bootstrap:
-            n_samples = X.shape[0]
-            indices = np.random.choice(n_samples, n_samples, replace=True)
-            X_bootstrap = X[indices]
-            y_bootstrap = y[indices]
-        else:
-            X_bootstrap, y_bootstrap = X, y
-        
-        feature_indices = np.random.choice(self.n_features, self.max_features, replace=False)
-        X_subset = X_bootstrap[:, feature_indices]
-        
-        tree.fit(X_subset, y_bootstrap)
-        return tree, feature_indices
-
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        predictions = Parallel(n_jobs=self.n_jobs)(
-            delayed(self._predict_tree)(tree, feature_indices, X) for tree, feature_indices in self.trees
-        )
-        predictions = np.array(predictions).T
-        return np.array([np.bincount(pred.astype(int)).argmax() for pred in predictions])
-
-    def _predict_tree(self, tree: DtreeDecisionTreeClassifier, feature_indices: np.ndarray, X: np.ndarray) -> np.ndarray:
-        return tree.predict(X[:, feature_indices])
+    def _count_nodes(self, node: Dict) -> int:
+        if not isinstance(node, dict):
+            return 1
+        return 1 + self._count_nodes(node['left']) + self._count_nodes(node['right'])

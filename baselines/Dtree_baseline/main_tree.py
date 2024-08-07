@@ -5,7 +5,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from ucimlrepo import fetch_ucirepo
 from dtree_source.dtree import DtreeDecisionTreeClassifier
 
-def get_best_hyperparameters(X_train, y_train, X_val, y_val, max_depth=5, alphas=np.linspace(1, 10, 10), betas=np.linspace(1, 10, 10)):
+def get_best_hyperparameters(X_train, y_train, max_depth=5, alphas=np.linspace(1, 10, 10), betas=np.linspace(1, 10, 10)):
     best_train_acc = -1
     best_params = (None, None)
     best_tree = None
@@ -24,7 +24,7 @@ def get_best_hyperparameters(X_train, y_train, X_val, y_val, max_depth=5, alphas
 
     return best_tree, best_params, best_train_acc
 
-def run_dtree_on_dataset(X, y, max_depth=5, alphas=np.linspace(0, 10, 10), betas=np.linspace(0, 10, 10), seed=1):
+def run_dtree_on_dataset(X, y, max_depth=5, alphas=np.linspace(1, 10, 10), betas=np.linspace(1, 10, 10), seed=1):
     np.random.seed(seed)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=seed)
 
@@ -32,12 +32,14 @@ def run_dtree_on_dataset(X, y, max_depth=5, alphas=np.linspace(0, 10, 10), betas
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    best_tree, best_params, best_train_acc = get_best_hyperparameters(X_train_scaled, y_train, X_test_scaled, y_test, max_depth, alphas, betas)
+    best_tree, best_params, best_train_acc = get_best_hyperparameters(X_train_scaled, y_train, max_depth, alphas, betas)
     
     y_test_pred = best_tree.predict(X_test_scaled)
     test_acc = np.mean(y_test_pred == y_test)
 
-    return best_params, best_train_acc, test_acc
+    num_nodes = best_tree.num_nodes()
+
+    return best_params, best_train_acc, test_acc, num_nodes
 
 def experiment_on_datasets_single_tree(seeds, max_depth=5, alphas=np.linspace(1, 10, 10), betas=np.linspace(1, 10, 10)):
     
@@ -45,8 +47,8 @@ def experiment_on_datasets_single_tree(seeds, max_depth=5, alphas=np.linspace(1,
         # (267, "Banknote"),
         # (17, "BCW-D"),
         # (109, "Wine"),
-        # (53, "Iris"),
-        (850, "Raisin"),
+        (53, "Iris"),
+        # (850, "Raisin"),
         # (15, "BCW")
     ] 
 
@@ -63,20 +65,26 @@ def experiment_on_datasets_single_tree(seeds, max_depth=5, alphas=np.linspace(1,
             y = le.fit_transform(y)
         
         per_seed_results = []
+        num_nodes_list = []
         for seed in seeds:
-            best_params, best_train_acc, test_acc = run_dtree_on_dataset(X, y, max_depth=max_depth, alphas=alphas, betas=betas, seed=seed)
+            best_params, best_train_acc, test_acc, num_nodes = run_dtree_on_dataset(X, y, max_depth=max_depth, alphas=alphas, betas=betas, seed=seed)
             per_seed_results.append((best_params, best_train_acc, test_acc))
-            print(f"{dataset_name} {seed} - Best Params: {best_params}, Train Accuracy: {best_train_acc:.4f}, Test Accuracy: {test_acc:.4f}")
+            num_nodes_list.append(num_nodes)
+            print(f"{dataset_name} {seed} - Best Params: {best_params}, Train Accuracy: {best_train_acc:.4f}, Test Accuracy: {test_acc:.4f}, Num Nodes: {num_nodes}")
 
         mean_test_accuracy = np.mean([result[2] for result in per_seed_results])
         std_test_accuracy = np.std([result[2] for result in per_seed_results])
+        mean_num_nodes = np.mean(num_nodes_list)
+        std_num_nodes = np.std(num_nodes_list)
 
         results[dataset_name] = {
             "mean_test_accuracy": mean_test_accuracy,
-            "std_test_accuracy": std_test_accuracy
+            "std_test_accuracy": std_test_accuracy,
+            "mean_num_nodes": mean_num_nodes,
+            "std_num_nodes": std_num_nodes
         }
 
-        print(f"{dataset_name} - Mean Test Accuracy: {mean_test_accuracy:.4f}, Std: {std_test_accuracy:.4f}")
+        print(f"{dataset_name} - Mean Test Accuracy: {mean_test_accuracy:.4f}, Std: {std_test_accuracy:.4f}, Mean Num Nodes: {mean_num_nodes:.2f}, Std Num Nodes: {std_num_nodes:.2f}")
     return results
 
 if __name__ == "__main__":
@@ -89,4 +97,4 @@ if __name__ == "__main__":
     # Print final results
     print("\nFinal Results:")
     for dataset, metrics in results.items():
-        print(f"{dataset} - Mean Test Accuracy: {metrics['mean_test_accuracy']:.4f}, Std: {metrics['std_test_accuracy']:.4f}")
+        print(f"{dataset} - Mean Test Accuracy: {metrics['mean_test_accuracy']:.4f}, Std: {metrics['std_test_accuracy']:.4f}, Mean Num Nodes: {metrics['mean_num_nodes']:.2f}, Std Num Nodes: {metrics['std_num_nodes']:.2f}")
