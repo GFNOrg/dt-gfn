@@ -1,11 +1,19 @@
 from typing import Union
 
+import sys
+import os
+
+# Add the dpdt_source directory to the Python path
+current_dir = os.path.dirname(__file__)
+dpdt_source_path = os.path.abspath(os.path.join(current_dir, '..', '..'))
+sys.path.append(dpdt_source_path)
+
 import numpy as np
 from sklearn.metrics import zero_one_loss, mean_squared_error
 
-from dpdt.utils.cy_feature_select import cy_last_depth_count_based as last_depth_select
 from dpdt.utils.datasets import Data
 from dpdt.utils.feature_selectors import AIGSelector
+from dpdt.utils.cy_feature_select import cy_last_depth_count_based as last_depth_select
 
 
 def eval_in_mdp(
@@ -13,12 +21,14 @@ def eval_in_mdp(
 ):
     nb_features = S.shape[1]
     score = 0
+    visited_nodes = set()
     init_a = policy[tuple(init_o.tolist() + [0])][zeta]
     for i, s in enumerate(S):
         a = init_a
         o = init_o.copy()
         H = 0
         while not isinstance(a, np.uint8):  # a is int implies leaf node
+            visited_nodes.add(tuple(o.tolist() + [H]))
             feature, threshold = a
             H += 1
             if s[feature] <= threshold:
@@ -26,9 +36,11 @@ def eval_in_mdp(
             else:
                 o[feature] = threshold
             a = policy[tuple(o.tolist() + [H])][zeta]
-            # print(s, o, a)
+        visited_nodes.add(tuple(o.tolist() + [H]))  # Add leaf node
         score += a == Y[i]
-    return score / S.shape[0]
+    
+    total_nodes = len(visited_nodes)
+    return score / S.shape[0], total_nodes
 
 
 def average_traj_length_in_mdp(
