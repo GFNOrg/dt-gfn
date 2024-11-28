@@ -3,7 +3,9 @@ from abc import ABC, abstractmethod
 import numpy as np
 from scipy.stats import entropy
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+
 # from dpdt.utils.cy_feature_select import cy_get_info_gains_quantile_count_based
+
 
 class AIGSelector(ABC):
     @abstractmethod
@@ -54,13 +56,11 @@ class KBest(AIGSelector):
 
     def info_gain(self, split_feature, split_value, entr_parent, nz):
 
-        inf = (
-                    (self.data.x[:, split_feature] <= split_value) * nz
-                )
+        inf = (self.data.x[:, split_feature] <= split_value) * nz
         sup = np.logical_not(inf) * nz
         p_left = inf.sum() / nz.sum()
         p_right = 1 - p_left
-        
+
         # print(data_left.x.shape)
 
         _, counts_left = np.unique(self.data.y[inf], return_counts=True)
@@ -69,7 +69,6 @@ class KBest(AIGSelector):
         entropy_left = entropy(counts_left / self.data.y[inf].shape[0])
         entropy_right = entropy(counts_right / self.data.y[sup].shape[0])
 
-        
         return (
             entr_parent - (p_left * entropy_left + p_right * entropy_right),
             inf,
@@ -107,8 +106,8 @@ class CartAIGSelector(AIGSelector):
         for i in range(len(clf.tree_.feature)):
             if clf.tree_.feature[i] >= 0:
                 inf = (
-                    (self.data.x[:, clf.tree_.feature[i]] <= clf.tree_.threshold[i]) * nz
-                )
+                    self.data.x[:, clf.tree_.feature[i]] <= clf.tree_.threshold[i]
+                ) * nz
                 sup = np.logical_not(inf) * nz
                 p_left = inf.sum() / nz.sum()
                 p_right = 1 - p_left
@@ -118,7 +117,7 @@ class CartAIGSelector(AIGSelector):
                 pls.append(p_left)
                 prs.append(p_right)
         return feat_thresh, lefts, rights, pls, prs
-    
+
 
 class CartAIGSelectorReg(AIGSelector):
     def __init__(self, depth: int = 4, max_tree_sizes: list = None):
@@ -146,8 +145,8 @@ class CartAIGSelectorReg(AIGSelector):
         for i in range(len(clf.tree_.feature)):
             if clf.tree_.feature[i] >= 0:
                 inf = (
-                    (self.data.x[:, clf.tree_.feature[i]] <= clf.tree_.threshold[i]) * nz
-                )
+                    self.data.x[:, clf.tree_.feature[i]] <= clf.tree_.threshold[i]
+                ) * nz
                 sup = np.logical_not(inf) * nz
                 p_left = inf.sum() / nz.sum()
                 p_right = 1 - p_left
@@ -184,7 +183,8 @@ class DeepTreeCartAIGSelector(AIGSelector):
             pls.append(p_left)
             prs.append(p_right)
         return feat_thresh, lefts, rights, pls, prs
-    
+
+
 # class QuantileInfoGainAIGSelector(AIGSelector):
 #     def __init__(self, nb_aig, quantile):
 #         self.nb_aig = nb_aig

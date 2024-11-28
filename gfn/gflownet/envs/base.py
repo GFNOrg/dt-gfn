@@ -13,11 +13,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 import torch
-from torch.distributions import Categorical
-from torchtyping import TensorType
-
 from gflownet.utils.common import (copy, set_device, set_float_precision,
                                    tbool, tfloat)
+from torch.distributions import Categorical
+from torchtyping import TensorType
 
 CMAP = mpl.colormaps["cividis"]
 
@@ -918,8 +917,12 @@ class GFlowNetEnv:
         # return deepcopy(self)
         new_env = object.__new__(type(self))
         new_env.__dict__ = self.__dict__.copy()
-        if hasattr(self, 'state'):
-            new_env.state = self.state.copy() if isinstance(self.state, list) else self.state.clone() if torch.is_tensor(self.state) else self.state
+        if hasattr(self, "state"):
+            new_env.state = (
+                self.state.copy()
+                if isinstance(self.state, list)
+                else self.state.clone() if torch.is_tensor(self.state) else self.state
+            )
         return new_env
 
     @staticmethod

@@ -6,13 +6,12 @@ from typing import List, Union
 
 import numpy as np
 import torch
+from gflownet.utils.policy import parse_policy_config
 from hydra import compose, initialize_config_dir
 from hydra.utils import get_original_cwd, instantiate
 from omegaconf import OmegaConf
-from torchtyping import TensorType
 from sklearn.tree import DecisionTreeClassifier
-
-from gflownet.utils.policy import parse_policy_config
+from torchtyping import TensorType
 
 
 def set_device(device: Union[str, torch.device]):
@@ -299,7 +298,9 @@ def bootstrap_samples(tensor, num_samples):
     returns tensor of the shape [initial_shape, num_samples]
     """
     dim_size = tensor.size(-1)
-    bs_indices = torch.randint(0, dim_size, size=(num_samples * dim_size,), device=tensor.device)
+    bs_indices = torch.randint(
+        0, dim_size, size=(num_samples * dim_size,), device=tensor.device
+    )
     bs_samples = torch.index_select(tensor, -1, index=bs_indices)
     bs_samples = bs_samples.view(
         tensor.size()[:-1] + (num_samples, dim_size)
@@ -313,41 +314,44 @@ def hash_tensor(tensor):
     """
     return hash(tuple(tensor.reshape(-1).tolist()))
 
+
 def convert_sklearn_tree_to_custom_state(sklearn_tree, max_depth, thresholds):
     """
     Converts standard decision tree classifiers from sklearn to that of the Tree class.
     """
     n_nodes = 2**max_depth - 1
     custom_tree = np.full((n_nodes + 1, 5), np.nan, dtype=float)
-    
+
     def get_binned_threshold(threshold):
         return thresholds[np.argmin(np.abs(thresholds - threshold))]
-    
+
     def recurse(sklearn_node, custom_node):
         if custom_node >= n_nodes:
             return
-        
+
         if sklearn_tree.feature[sklearn_node] != -2:  # Not a leaf
             original_threshold = sklearn_tree.threshold[sklearn_node]
             binned_threshold = get_binned_threshold(original_threshold)
-            
-            custom_tree[custom_node] = [0, 
-                                        sklearn_tree.feature[sklearn_node], 
-                                        binned_threshold, 
-                                        -1, 
-                                        0]
-            
+
+            custom_tree[custom_node] = [
+                0,
+                sklearn_tree.feature[sklearn_node],
+                binned_threshold,
+                -1,
+                0,
+            ]
+
             left_child = sklearn_tree.children_left[sklearn_node]
             right_child = sklearn_tree.children_right[sklearn_node]
-            
+
             recurse(left_child, 2 * custom_node + 1)
             recurse(right_child, 2 * custom_node + 2)
         else:  # Leaf node
             custom_tree[custom_node] = [1, -1, -1, -1, 0]
-    
+
     recurse(0, 0)
-    
+
     # Set the last row (stage information)
     custom_tree[-1] = [0, np.nan, np.nan, np.nan, np.nan]
-    
+
     return custom_tree

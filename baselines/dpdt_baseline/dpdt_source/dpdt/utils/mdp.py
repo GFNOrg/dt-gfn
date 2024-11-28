@@ -1,19 +1,18 @@
-from typing import Union
-
-import sys
 import os
+import sys
+from typing import Union
 
 # Add the dpdt_source directory to the Python path
 current_dir = os.path.dirname(__file__)
-dpdt_source_path = os.path.abspath(os.path.join(current_dir, '..', '..'))
+dpdt_source_path = os.path.abspath(os.path.join(current_dir, "..", ".."))
 sys.path.append(dpdt_source_path)
 
 import numpy as np
-from sklearn.metrics import zero_one_loss, mean_squared_error
-
+from dpdt.utils.cy_feature_select import \
+    cy_last_depth_count_based as last_depth_select
 from dpdt.utils.datasets import Data
 from dpdt.utils.feature_selectors import AIGSelector
-from dpdt.utils.cy_feature_select import cy_last_depth_count_based as last_depth_select
+from sklearn.metrics import mean_squared_error, zero_one_loss
 
 
 def eval_in_mdp(
@@ -38,7 +37,7 @@ def eval_in_mdp(
             a = policy[tuple(o.tolist() + [H])][zeta]
         visited_nodes.add(tuple(o.tolist() + [H]))  # Add leaf node
         score += a == Y[i]
-    
+
     total_nodes = len(visited_nodes)
     return score / S.shape[0], total_nodes
 
@@ -67,6 +66,7 @@ def average_traj_length_in_mdp(
         lengths[i] = H
     return score / S.shape[0], lengths.mean()
 
+
 def average_traj_length_in_mdp_regression(
     S: np.ndarray, Y: np.ndarray, policy: dict, init_o: np.ndarray, zeta: int
 ):
@@ -90,7 +90,8 @@ def average_traj_length_in_mdp_regression(
             # print(s, o, a)
         preds.append(a)
         lengths[i] = H
-    return 1 - mean_squared_error(Y,preds), lengths.mean()
+    return 1 - mean_squared_error(Y, preds), lengths.mean()
+
 
 class State:
     def __init__(self, label: np.ndarray, nz: np.ndarray, is_terminal: bool = False):
@@ -212,8 +213,6 @@ def build_mdp(
     return deci_nodes
 
 
-
-
 def build_mdp_regression(
     S: np.ndarray,
     Y: np.ndarray,
@@ -274,7 +273,9 @@ def build_mdp_regression(
                     ) = aig_fn.select(node.nz)
 
             astar = data.y[node.nz].mean(axis=0)
-            rstar = - mean_squared_error(data.y[node.nz], data.y[node.nz].shape[0] * [astar])
+            rstar = -mean_squared_error(
+                data.y[node.nz], data.y[node.nz].shape[0] * [astar]
+            )
             next_state = State(terminal_state, [0], is_terminal=True)
             next_state.qs = [rstar]
             a = Action(astar)

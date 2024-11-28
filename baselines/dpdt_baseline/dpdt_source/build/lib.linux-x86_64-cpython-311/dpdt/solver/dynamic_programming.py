@@ -1,12 +1,10 @@
+import pickle
 import time
 
 import numpy as np
-
 from dpdt.utils.feature_selectors import AIGSelector
 from dpdt.utils.mdp import State, build_mdp, eval_in_mdp
 from dpdt.utils.tree import extract_tree
-
-import pickle
 
 
 def backward_induction(mdp: list[list[State]], zeta: float):
@@ -57,6 +55,7 @@ def backward_induction_multiple_zetas(mdp: list[list[State]], zetas: np.ndarray)
                 node.actions[k].action for k in argmax_qs
             ]
     return policy
+
 
 def count_states_f(mdp: list[list[State]]):
     nb = 0
@@ -110,7 +109,10 @@ def dpdt(
         if plot_tree:
             graph = tree_.graphviz()
             graph.body
-            graph.render(tree_folder + "arbre" + str(nodes[i])+ "_" + str(round(scores[i],4)) , format="png")
+            graph.render(
+                tree_folder + "arbre" + str(nodes[i]) + "_" + str(round(scores[i], 4)),
+                format="png",
+            )
     if count_states:
         return scores, depths, nodes, time_, nb_states
     return scores, depths, nodes, time_

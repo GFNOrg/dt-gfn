@@ -41,7 +41,9 @@ class Buffer:
         self.min_replay_reward = min_replay_reward
         self.replay.reward = pd.to_numeric(self.replay.reward)
         self.replay.energy = pd.to_numeric(self.replay.energy)
-        self.replay.reward = [self.min_replay_reward for _ in range(self.replay_capacity)]
+        self.replay.reward = [
+            self.min_replay_reward for _ in range(self.replay_capacity)
+        ]
         self.replay_states = {}
         self.replay_trajs = {}
         self.replay_rewards = {}
@@ -246,25 +248,23 @@ class Buffer:
         ):
             print(f"by sampling {config.n} points uniformly\n")
             samples = self.env.get_uniform_terminating_states(config.n, config.seed)
-        elif (
-            config.type == "random"
-            and "n" in config
-        ):  
+        elif config.type == "random" and "n" in config:
             print(f"by sampling {config.n} points randomly\n")
             samples = self.env.get_random_terminating_states(config.n)
-        elif (
-            config.type == "random_unmasked"
-            and "n" in config
-        ):  
+        elif config.type == "random_unmasked" and "n" in config:
             if "rf_proportion" in config and config.rf_proportion != 0.0:
-                print(f"by sampling {int(config.n*(1-config.rf_proportion))} points randomly and {int(config.n*config.rf_proportion)} from a random forest.\n")
-                samples = self.env.get_random_unmasked_terminating_states(config.n, config.rf_proportion, config.seed)
-            else: 
+                print(
+                    f"by sampling {int(config.n*(1-config.rf_proportion))} points randomly and {int(config.n*config.rf_proportion)} from a random forest.\n"
+                )
+                samples = self.env.get_random_unmasked_terminating_states(
+                    config.n, config.rf_proportion, config.seed
+                )
+            else:
                 print(f"by sampling {config.n} points randomly\n")
                 samples = self.env.get_random_unmasked_terminating_states(config.n)
         else:
             return None, None
-        
+
         # code.interact(local=dict(globals(), **locals()))
         energies = self.env.proxy(self.env.states2proxy(samples)).tolist()
         df = pd.DataFrame(

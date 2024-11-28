@@ -1,17 +1,21 @@
 import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from dpdt.utils.feature_selectors import CartAIGSelector
 from dpdt import dpdt
-from ucimlrepo import fetch_ucirepo
-from dpdt.utils import build_mdp, CartAIGSelector, average_traj_length_in_mdp, extract_tree
 from dpdt.solver import backward_induction_multiple_zetas
+from dpdt.utils import (CartAIGSelector, average_traj_length_in_mdp, build_mdp,
+                        extract_tree)
+from dpdt.utils.feature_selectors import CartAIGSelector
 from dpdt.utils.mdp import State, build_mdp, eval_in_mdp
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from ucimlrepo import fetch_ucirepo
+
 
 def run_dpdt_forest_on_dataset(X, y, n_trees=10, seed=42):
     np.random.seed(seed)
     # Split the data into training and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=seed)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=seed
+    )
 
     # Standardize the features
     scaler = StandardScaler()
@@ -27,16 +31,19 @@ def run_dpdt_forest_on_dataset(X, y, n_trees=10, seed=42):
     forest = []
     for _ in range(n_trees):
         # Bootstrap sampling
-        indices = np.random.choice(len(X_train_scaled), len(X_train_scaled), replace=True)
+        indices = np.random.choice(
+            len(X_train_scaled), len(X_train_scaled), replace=True
+        )
         X_bootstrap = X_train_scaled[indices]
         y_bootstrap = y_train[indices]
 
         scores, depths, nodes, time_ = dpdt(
-            X_bootstrap, y_bootstrap,
+            X_bootstrap,
+            y_bootstrap,
             aig_selector,
             zetas,
             max_depth=max_depth,
-            verbose=False
+            verbose=False,
         )
 
         # Build the MDP for the best zeta
@@ -54,7 +61,9 @@ def run_dpdt_forest_on_dataset(X, y, n_trees=10, seed=42):
             for x in X:
                 state = root_state
                 while not state.is_terminal:
-                    action = max(policy[state].items(), key=lambda x: x[1][best_zeta_index])[0]
+                    action = max(
+                        policy[state].items(), key=lambda x: x[1][best_zeta_index]
+                    )[0]
                     state = state.step(action)
                 tree_predictions.append(state.label)
             predictions.append(tree_predictions)
@@ -65,11 +74,9 @@ def run_dpdt_forest_on_dataset(X, y, n_trees=10, seed=42):
 
     return test_accuracy
 
+
 def experiment_on_datasets(seeds, n_trees=10):
-    datasets = [
-        (850, "Raisin"),
-        (15, "BCW")
-    ]
+    datasets = [(850, "Raisin"), (15, "BCW")]
 
     results = {}
 
@@ -83,23 +90,26 @@ def experiment_on_datasets(seeds, n_trees=10):
         if y.dtype == object:
             le = LabelEncoder()
             y = le.fit_transform(y)
-        
+
         accuracies = []
         for seed in seeds:
             accuracy = run_dpdt_forest_on_dataset(X, y, n_trees=n_trees, seed=seed)
             accuracies.append(accuracy)
-        
+
         mean_accuracy = np.mean(accuracies)
         std_accuracy = np.std(accuracies)
-        
+
         results[dataset_name] = {
             "mean_accuracy": mean_accuracy,
-            "std_accuracy": std_accuracy
+            "std_accuracy": std_accuracy,
         }
-        
-        print(f"{dataset_name} - Mean Accuracy: {mean_accuracy:.4f}, Std: {std_accuracy:.4f}")
-    
+
+        print(
+            f"{dataset_name} - Mean Accuracy: {mean_accuracy:.4f}, Std: {std_accuracy:.4f}"
+        )
+
     return results
+
 
 # Run the experiments
 np.random.seed(42)
@@ -110,4 +120,6 @@ results = experiment_on_datasets(seeds, n_trees)
 # Print final results
 print("\nFinal Results:")
 for dataset, metrics in results.items():
-    print(f"{dataset} - Mean Accuracy: {metrics['mean_accuracy']:.4f}, Std: {metrics['std_accuracy']:.4f}")
+    print(
+        f"{dataset} - Mean Accuracy: {metrics['mean_accuracy']:.4f}, Std: {metrics['std_accuracy']:.4f}"
+    )

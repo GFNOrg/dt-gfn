@@ -4,11 +4,10 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import numpy.typing as npt
 import torch
-from torchtyping import TensorType
-
 from gflownet.envs.base import GFlowNetEnv
 from gflownet.utils.common import (concat_items, copy, extend, set_device,
                                    set_float_precision, tbool, tfloat, tlong)
+from torchtyping import TensorType
 
 
 class Batch:

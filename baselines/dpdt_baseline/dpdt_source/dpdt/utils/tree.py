@@ -1,5 +1,5 @@
 from binarytree import Node, tree
-from numpy import uint8, float64, ndarray
+from numpy import float64, ndarray, uint8
 
 
 ### Policy Nodes

@@ -1,14 +1,14 @@
 import code
-import numpy as np
-import torch
-import torch.nn as nn 
-from scipy.special import gammaln
-from torchtyping import TensorType
 from typing import List, Optional
 
+import numpy as np
+import torch
+import torch.nn as nn
 from gflownet.envs.tree_acc import Tree
 from gflownet.proxy.base import Proxy
 from gflownet.utils.common import tfloat
+from scipy.special import gammaln
+from torchtyping import TensorType
 
 from ..envs.tree_acc_cython import compute_log_likelihood_cython
 
@@ -18,20 +18,20 @@ class CategoricalTreeProxy(Proxy):
         self,
         alpha: str = "Uniform",
         alpha_value: float = 1.0,
-        beta: float = 1.0, 
+        beta: float = 1.0,
         use_prior: bool = False,
-        gamma: float = 1.0,  
+        gamma: float = 1.0,
         mini_batch: bool = False,
         batch_size: int = 512,
-        log_likelihood_only: bool = False, 
-        **kwargs
+        log_likelihood_only: bool = False,
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.use_prior = use_prior
-        self.gamma = gamma  
+        self.gamma = gamma
         self.beta = beta
-        self.sigma = nn.Parameter(torch.tensor(1.0))  
-        self.phi = nn.Parameter(torch.tensor(1.0))  
+        self.sigma = nn.Parameter(torch.tensor(1.0))
+        self.phi = nn.Parameter(torch.tensor(1.0))
         self.X = None
         self.y = None
         self.env = None
@@ -46,99 +46,120 @@ class CategoricalTreeProxy(Proxy):
         self.X = env.X_train
         self.y = env.y_train
         self.env = env
-        if env.X_test is not None: 
-            self.X_test = env.X_test 
+        if env.X_test is not None:
+            self.X_test = env.X_test
             self.y_test = env.y_test
         self.max_depth = env.max_depth
         self.n_classes = len(np.unique(self.y))
-        
+
         # Prior over classification parameters
         if self.alpha_type == "Uniform":
             self.alpha = torch.ones(self.n_classes) * self.alpha_value
         elif self.alpha_type == "Label_Counts":
-            class_counts = np.bincount(self.y) + 1  
-            self.alpha = torch.tensor(class_counts / class_counts.sum() * self.alpha_value) 
-        elif self.alpha_type == "Custom": 
-            if env.prior is not None: 
+            class_counts = np.bincount(self.y) + 1
+            self.alpha = torch.tensor(
+                class_counts / class_counts.sum() * self.alpha_value
+            )
+        elif self.alpha_type == "Custom":
+            if env.prior is not None:
                 self.alpha = env.prior
-            else: 
+            else:
                 self.alpha = torch.ones(self.n_classes) * self.alpha_value
         else:
-            raise ValueError("Unknown alpha initialization method")  
-    
+            raise ValueError("Unknown alpha initialization method")
+
     def set_sigma_phi(self, sigma, phi):
         self.sigma = sigma
-        self.phi = phi  
+        self.phi = phi
 
-    def __call__(self, states: TensorType["batch", "state_dim"], test=False) -> TensorType["batch"]:
-        
-        log_dirichlet = lambda dirichlet_params: sum([gammaln(i) for i in dirichlet_params]) - gammaln(sum(dirichlet_params))  
+    def __call__(
+        self, states: TensorType["batch", "state_dim"], test=False
+    ) -> TensorType["batch"]:
+
+        log_dirichlet = lambda dirichlet_params: sum(
+            [gammaln(i) for i in dirichlet_params]
+        ) - gammaln(sum(dirichlet_params))
 
         energies = []
 
         for state in states:
-            
+
             state_np = state.cpu().numpy().astype(np.float32)
 
             if not self.mini_batch:
                 if np.array_equal(np.unique(self.y_test), np.unique(self.y)):
-                    if test: 
+                    if test:
                         samples = self.X_test
                         labels = self.y_test
-                    else: 
+                    else:
                         samples = self.X
                         labels = self.y
-                else: 
+                else:
                     samples = self.X
                     labels = self.y
 
             else:
                 if np.array_equal(np.unique(self.y_test), np.unique(self.y)):
-                    if test: 
-                        sample_indices = np.random.choice(self.X_test.shape[0], self.batch_size, replace=False)
+                    if test:
+                        sample_indices = np.random.choice(
+                            self.X_test.shape[0], self.batch_size, replace=False
+                        )
                         samples = self.X_test[sample_indices]
                         labels = self.y_test[sample_indices]
-                    else: 
-                        sample_indices = np.random.choice(self.X.shape[0], self.batch_size, replace=False)
+                    else:
+                        sample_indices = np.random.choice(
+                            self.X.shape[0], self.batch_size, replace=False
+                        )
                         samples = self.X[sample_indices]
                         labels = self.y[sample_indices]
-                else: 
-                        sample_indices = np.random.choice(self.X.shape[0], self.batch_size, replace=False)
-                        samples = self.X[sample_indices]
-                        labels = self.y[sample_indices]
-            try: 
+                else:
+                    sample_indices = np.random.choice(
+                        self.X.shape[0], self.batch_size, replace=False
+                    )
+                    samples = self.X[sample_indices]
+                    labels = self.y[sample_indices]
+            try:
                 n_leaves, log_likelihood = compute_log_likelihood_cython(
                     state_np,
                     samples,
                     labels,
-                    self.alpha.numpy() if isinstance(self.alpha, torch.Tensor) else self.alpha,
-                    self.n_classes
+                    (
+                        self.alpha.numpy()
+                        if isinstance(self.alpha, torch.Tensor)
+                        else self.alpha
+                    ),
+                    self.n_classes,
                 )
             except Exception as e:
                 print(f"Error in compute_log_likelihood_cython: {str(e)}")
                 raise
 
             if self.use_prior:
-                log_prior = 0  
-                # Compute the BCART prior  
-                for i in range(2**self.max_depth-1): 
+                log_prior = 0
+                # Compute the BCART prior
+                for i in range(2**self.max_depth - 1):
                     depth = np.floor(np.log2(i + 1))
                     p_split = (self.sigma * (1 + depth) ** (-self.phi)).clone().detach()
-                    is_internal = 1 if Tree._get_left_child(i) < 2**self.max_depth-1 else 0
-                    if is_internal:  
-                        log_prior += torch.log(p_split)  
-                    else: 
-                        log_prior += torch.log(1 - p_split)  
+                    is_internal = (
+                        1 if Tree._get_left_child(i) < 2**self.max_depth - 1 else 0
+                    )
+                    if is_internal:
+                        log_prior += torch.log(p_split)
+                    else:
+                        log_prior += torch.log(1 - p_split)
             else:
-                n_internal_nodes = Tree.get_n_nodes(state)-n_leaves
-                log_prior = -(np.log(4) + np.log(self.env.n_features))*(n_internal_nodes) 
-            
-            if self.log_likelihood_only: 
+                n_internal_nodes = Tree.get_n_nodes(state) - n_leaves
+                log_prior = -(np.log(4) + np.log(self.env.n_features)) * (
+                    n_internal_nodes
+                )
+
+            if self.log_likelihood_only:
                 log_prior = -1e-3
 
             energies.append((len(self.X) / len(samples)) * (log_likelihood + log_prior))
 
-        return torch.tensor(energies, dtype=torch.float, device=self.device)  
+        return torch.tensor(energies, dtype=torch.float, device=self.device)
+
 
 class TreeProxy(Proxy):
     """
@@ -183,7 +204,7 @@ class TreeProxy(Proxy):
                 prior = np.exp(-self.beta * n_nodes)
             else:
                 prior = 1
-                
+
             energies.append(-likelihood * prior)
 
         return tfloat(energies, float_type=self.float, device=self.device)

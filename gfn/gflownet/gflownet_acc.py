@@ -4,8 +4,9 @@ TODO:
     - Seeds
 """
 
-import copy
 import code
+import concurrent.futures
+import copy
 import os
 import pickle
 import time
@@ -17,13 +18,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
-from scipy.special import logsumexp
-from torch.distributions import Bernoulli
-from tqdm import tqdm
-from torch.multiprocessing import Pool
-from torch.cuda.amp import autocast, GradScaler
-import concurrent.futures 
-
 from gflownet.envs.base import GFlowNetEnv
 from gflownet.policy.tree_mlp import MLPPolicy
 from gflownet.proxy.tree_acc import CategoricalTreeProxy
@@ -32,7 +26,11 @@ from gflownet.utils.buffer import Buffer
 from gflownet.utils.common import (batch_with_rest, bootstrap_samples,
                                    set_device, set_float_precision, tbool,
                                    tfloat, tlong, torch2np)
-
+from scipy.special import logsumexp
+from torch.cuda.amp import GradScaler, autocast
+from torch.distributions import Bernoulli
+from torch.multiprocessing import Pool
+from tqdm import tqdm
 
 
 class GFlowNetAgent:
@@ -60,7 +58,7 @@ class GFlowNetAgent:
         replay_sampling="permutation",
         train_sampling="permutation",
         logreward=True,
-        sigma=None, 
+        sigma=None,
         phi=None,
         **kwargs,
     ):
@@ -71,9 +69,10 @@ class GFlowNetAgent:
         # Float precision
         self.float = set_float_precision(float_precision)
         # Mixed-Precision Training
-        self.use_mixed_precision = use_mixed_precision and self.device == 'cuda'
-        assert not self.use_mixed_precision or self.device == 'cuda', \
-            "Mixed precision can only be used with CUDA."
+        self.use_mixed_precision = use_mixed_precision and self.device == "cuda"
+        assert (
+            not self.use_mixed_precision or self.device == "cuda"
+        ), "Mixed precision can only be used with CUDA."
         # Environment
         self.env = env
         # Proxy Hyperparameters
@@ -177,17 +176,21 @@ class GFlowNetAgent:
             # TODO: add the logic and conditions to reload a model
         else:
             self.logger.set_state_flow_ckpt_path(None)
-        
+
         # Proxy tunable hyperparameters
         if sigma is not None:
-            self.sigma = torch.nn.Parameter(torch.tensor(self.sigma, dtype=torch.float32))
-        else: 
+            self.sigma = torch.nn.Parameter(
+                torch.tensor(self.sigma, dtype=torch.float32)
+            )
+        else:
             self.sigma = sigma
         if phi is not None:
             self.phi = torch.nn.Parameter(torch.tensor(self.phi, dtype=torch.float32))
-        else: 
+        else:
             self.phi = phi
-        if isinstance(self.forward_policy, MLPPolicy) and isinstance(self.env.proxy, CategoricalTreeProxy):
+        if isinstance(self.forward_policy, MLPPolicy) and isinstance(
+            self.env.proxy, CategoricalTreeProxy
+        ):
             self.sigma = self.forward_policy.sigma
             self.phi = self.forward_policy.phi
             self.env.proxy.set_sigma_phi(self.sigma, self.phi)
@@ -238,7 +241,7 @@ class GFlowNetAgent:
             if self.loss not in ["detailedbalance", "forwardlooking"]:
                 raise ValueError(f"State flow cannot be trained with {self.loss} loss.")
             parameters += list(self.state_flow.model.parameters())
-        
+
         if isinstance(self.env.proxy, CategoricalTreeProxy):
             if self.sigma is not None and self.phi is not None:
                 parameters += [self.sigma, self.phi]
@@ -475,8 +478,14 @@ class GFlowNetAgent:
                 )
                 times["actions_envs"] += time.time() - t0_a_envs
                 envs, actions, valids = self.step(envs, actions, backward=backward)
-                batch.add_to_batch(envs, actions, valids, backward=backward, train=train)
-                envs = [env for env in envs if not env.done] if not backward else [env for env in envs if not env.equal(env.state, env.source)]
+                batch.add_to_batch(
+                    envs, actions, valids, backward=backward, train=train
+                )
+                envs = (
+                    [env for env in envs if not env.done]
+                    if not backward
+                    else [env for env in envs if not env.equal(env.state, env.source)]
+                )
 
         # Process forward environments
         process_envs(envs, batch_forward)
@@ -485,7 +494,9 @@ class GFlowNetAgent:
         if n_train > 0 and self.buffer.train_pkl is not None:
             with open(self.buffer.train_pkl, "rb") as f:
                 dict_train = pickle.load(f)
-                x_train = self.buffer.select(dict_train, n_train, self.train_sampling, self.rng)
+                x_train = self.buffer.select(
+                    dict_train, n_train, self.train_sampling, self.rng
+                )
             envs_train = [self.env.copy().reset(idx) for idx in range(n_train)]
             for env, x in zip(envs_train, x_train):
                 env.set_state(x, done=True)
@@ -498,10 +509,14 @@ class GFlowNetAgent:
                 dict_replay = pickle.load(f)
                 n_replay = min(n_replay, len(dict_replay["x"]))
                 envs_replay = [self.env.copy().reset(idx) for idx in range(n_replay)]
-                x_replay = self.buffer.select(dict_replay, n_replay, self.replay_sampling, self.rng)
+                x_replay = self.buffer.select(
+                    dict_replay, n_replay, self.replay_sampling, self.rng
+                )
             for env, x in zip(envs_replay, x_replay):
                 env.set_state(x, done=True)
-            batch_replay = Batch(env=self.env, device=self.device, float_type=self.float)
+            batch_replay = Batch(
+                env=self.env, device=self.device, float_type=self.float
+            )
             process_envs(envs_replay, batch_replay, backward=True)
 
         # Merge batches
@@ -510,7 +525,7 @@ class GFlowNetAgent:
             all_batches.append(batch_train)
         if batch_replay is not None:
             all_batches.append(batch_replay)
-        
+
         batch = batch.merge(all_batches)
         times["all"] = time.time() - t0_all
 
@@ -777,8 +792,10 @@ class GFlowNetAgent:
 
         # Get energies transitions
         if self.logreward:
-            energies_transitions = torch.log(rewards_parents) - torch.log(rewards_states)
-        else: 
+            energies_transitions = torch.log(rewards_parents) - torch.log(
+                rewards_states
+            )
+        else:
             energies_transitions = rewards_parents - rewards_states
 
         # Forward-looking loss
@@ -873,11 +890,11 @@ class GFlowNetAgent:
                 )
                 data_indices = traj_indices_batch // mult_indices
                 traj_indices = traj_indices_batch % mult_indices
-                logprobs_f[data_indices, traj_indices] = self.compute_logprobs_trajectories(
-                    batch, backward=False
+                logprobs_f[data_indices, traj_indices] = (
+                    self.compute_logprobs_trajectories(batch, backward=False)
                 )
-                logprobs_b[data_indices, traj_indices] = self.compute_logprobs_trajectories(
-                    batch, backward=True
+                logprobs_b[data_indices, traj_indices] = (
+                    self.compute_logprobs_trajectories(batch, backward=True)
                 )
                 init_batch += batch_size
                 end_batch = min(end_batch + batch_size, n_states)
@@ -898,7 +915,7 @@ class GFlowNetAgent:
         return logprobs_estimates, logprobs_std, probs_std
 
     def train(self):
-        
+
         # Metrics
         all_losses = []
         all_visited = []
@@ -966,13 +983,17 @@ class GFlowNetAgent:
                 batch.merge(sub_batch)
 
             # Set tunable reward parameters
-            if (isinstance(self.forward_policy, MLPPolicy) and
-                    isinstance(self.env.proxy, CategoricalTreeProxy) and
-                    self.env.proxy.use_prior):
-                self.env.proxy.set_sigma_phi(self.forward_policy.sigma, self.forward_policy.phi)
+            if (
+                isinstance(self.forward_policy, MLPPolicy)
+                and isinstance(self.env.proxy, CategoricalTreeProxy)
+                and self.env.proxy.use_prior
+            ):
+                self.env.proxy.set_sigma_phi(
+                    self.forward_policy.sigma, self.forward_policy.phi
+                )
                 sigma = self.forward_policy.sigma
                 phi = self.forward_policy.phi
-            else: 
+            else:
                 sigma, phi = None, None
 
             for j in range(self.ttsr):
@@ -1041,12 +1062,16 @@ class GFlowNetAgent:
             else:
                 all_visited.extend(states_term)
             # Progress bar
-            if isinstance(sigma, torch.nn.Parameter) and isinstance(phi, torch.nn.Parameter): 
-                pbar.set_postfix({
-                    "loss": all_losses[-1][0],
-                    "sigma": self.forward_policy.sigma.item(),
-                    "phi": self.forward_policy.phi.item()
-                })
+            if isinstance(sigma, torch.nn.Parameter) and isinstance(
+                phi, torch.nn.Parameter
+            ):
+                pbar.set_postfix(
+                    {
+                        "loss": all_losses[-1][0],
+                        "sigma": self.forward_policy.sigma.item(),
+                        "phi": self.forward_policy.phi.item(),
+                    }
+                )
             # Train logs
             t0_log = time.time()
             self.logger.log_train(
@@ -1102,7 +1127,6 @@ class GFlowNetAgent:
         if self.use_context is False:
             self.logger.end()
 
-
     def test(self, **plot_kwargs):
         """
         Computes metrics by sampling trajectories from the forward policy.
@@ -1140,17 +1164,23 @@ class GFlowNetAgent:
         rewards_x_tt = self.env.reward_batch(x_tt)
         fig = plt.figure()
         plt.scatter(rewards_x_tt, logprobs_x_tt.cpu().numpy())
-        np.save('corr_plot.npz', logprobs_x_tt.cpu().numpy(), rewards_x_tt)
-        plt.savefig('corr_plot.pdf')
+        np.save("corr_plot.npz", logprobs_x_tt.cpu().numpy(), rewards_x_tt)
+        plt.savefig("corr_plot.pdf")
         if not self.logreward:
             rewards_x_tt = np.exp(rewards_x_tt)
         corr_prob_traj_rewards = np.corrcoef(
             np.exp(logprobs_x_tt.cpu().numpy()), rewards_x_tt
         )[0, 1]
-        var_logrewards_logp = torch.var(
-            torch.log(tfloat(rewards_x_tt, float_type=self.float, device=self.device))
-            - logprobs_x_tt
-        ).item() if rewards_x_tt.shape[0] > 1 else torch.tensor(0.0)
+        var_logrewards_logp = (
+            torch.var(
+                torch.log(
+                    tfloat(rewards_x_tt, float_type=self.float, device=self.device)
+                )
+                - logprobs_x_tt
+            ).item()
+            if rewards_x_tt.shape[0] > 1
+            else torch.tensor(0.0)
+        )
         nll_tt = -logprobs_x_tt.mean().item()
         logprobs_std_nll_ratio = torch.mean(-logprobs_std / logprobs_x_tt).item()
 
@@ -1182,7 +1212,7 @@ class GFlowNetAgent:
                 max_data_size=self.logger.test.max_data_logprobs,
                 batch_size=self.logger.test.logprobs_batch_size,
                 bs_num_samples=self.logger.test.logprobs_bootstrap_size,
-                )
+            )
             fig = plt.figure()
             plt.scatter(rewards_x_tt, logprobs_x_tt.cpu().numpy())
             return (
@@ -1464,7 +1494,7 @@ def make_opt(params, logZ, config):
     params = params
     if not len(params):
         return None
-    
+
     if config.method == "adam":
         opt = torch.optim.Adam(
             params,

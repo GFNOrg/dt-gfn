@@ -1,14 +1,13 @@
 from abc import ABC, abstractmethod
 
 import torch
+from gflownet.utils.common import set_device, set_float_precision
 from omegaconf import OmegaConf
 from torch import nn
 
-from gflownet.utils.common import set_device, set_float_precision
-
 
 class ModelBase(ABC):
-    def __init__(self, config, env, float_precision=32, device='cuda', base=None):
+    def __init__(self, config, env, float_precision=32, device="cuda", base=None):
         # Device and float precision
         self.device = set_device(device)
         self.float = set_float_precision(float_precision)
@@ -93,7 +92,7 @@ class ModelBase(ABC):
 
 
 class Policy(ModelBase):
-    def __init__(self, config, env, float_precision=32, device='cuda', base=None):
+    def __init__(self, config, env, float_precision=32, device="cuda", base=None):
         super().__init__(config, env, float_precision, device, base)
 
         self.instantiate()
@@ -107,8 +106,8 @@ class Policy(ModelBase):
             self.is_model = False
         elif self.type == "mlp":
             self.model = self.make_mlp(nn.LeakyReLU()).to(self.device)
-            if self.device == 'cuda': 
-               self.model = torch.compile(self.model)
+            if self.device == "cuda":
+                self.model = torch.compile(self.model)
             self.is_model = True
         else:
             raise "Policy model type not defined"

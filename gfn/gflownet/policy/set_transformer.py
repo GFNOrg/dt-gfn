@@ -4,7 +4,6 @@ from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from gflownet.policy.base import Policy
 
 """
@@ -19,6 +18,7 @@ The Set Transformer definition in our code was based on their implementation.
     year={2019}
 }
 """
+
 
 class MAB(nn.Module):
     def __init__(self, dim_Q, dim_K, dim_V, num_heads, ln=False):
@@ -37,7 +37,7 @@ class MAB(nn.Module):
     def forward(self, Q, K):
         if Q.size(0) == 0:
             return Q
-            
+
         Q = self.fc_q(Q)
         K, V = self.fc_k(K), self.fc_v(K)
 
@@ -99,15 +99,19 @@ class SetTransformer(nn.Module):
         ln=False,
     ):
         super(SetTransformer, self).__init__()
-        self.enc = nn.ModuleList([
-            ISAB(dim_input, dim_hidden, num_heads, num_inds, ln=ln),
-            ISAB(dim_hidden, dim_hidden, num_heads, num_inds, ln=ln)
-        ])
-        self.dec = nn.ModuleList([
-            PMA(dim_hidden, num_heads, num_outputs, ln=ln),
-            SAB(dim_hidden, dim_hidden, num_heads, ln=ln),
-            SAB(dim_hidden, dim_hidden, num_heads, ln=ln)
-        ])
+        self.enc = nn.ModuleList(
+            [
+                ISAB(dim_input, dim_hidden, num_heads, num_inds, ln=ln),
+                ISAB(dim_hidden, dim_hidden, num_heads, num_inds, ln=ln),
+            ]
+        )
+        self.dec = nn.ModuleList(
+            [
+                PMA(dim_hidden, num_heads, num_outputs, ln=ln),
+                SAB(dim_hidden, dim_hidden, num_heads, ln=ln),
+                SAB(dim_hidden, dim_hidden, num_heads, ln=ln),
+            ]
+        )
         self.final_linear = nn.Linear(dim_hidden, dim_output)
 
     def forward(self, X):
@@ -130,7 +134,7 @@ class TreeSetTransformer(nn.Module):
         self.fc1 = nn.Linear(num_attributes * max_depth, embedding_dim)
         self.fc2 = nn.Linear(
             backbone_args["num_outputs"] * backbone_args["dim_output"],
-            backbone_args["dim_output"]
+            backbone_args["dim_output"],
         )
         self.model = SetTransformer(**backbone_args)
         assert embedding_dim == backbone_args["dim_input"]
@@ -186,16 +190,11 @@ class TreeSetPolicy(Policy):
 
     def instantiate(self):
         self.model = TreeSetTransformer(
-            backbone_args=self.backbone_args, 
-            **self.policy_args
+            backbone_args=self.backbone_args, **self.policy_args
         ).to(self.device)
-        
-        if self.device == 'cuda':
-            self.model = torch.compile(
-                self.model,
-                mode='default',
-                fullgraph=False
-            )
+
+        if self.device == "cuda":
+            self.model = torch.compile(self.model, mode="default", fullgraph=False)
 
     def __call__(self, states):
         if states.dim() == 2:

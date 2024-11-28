@@ -1,1 +1,1 @@
-from .dynamic_programming import dpdt, backward_induction_multiple_zetas
+from .dynamic_programming import backward_induction_multiple_zetas, dpdt

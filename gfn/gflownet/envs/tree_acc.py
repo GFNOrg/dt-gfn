@@ -1,16 +1,20 @@
 import warnings
-warnings.filterwarnings("ignore", category=UserWarning, message="A single label was found in 'y_true' and 'y_pred'.")
 
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message="A single label was found in 'y_true' and 'y_pred'.",
+)
+
+import code
+import multiprocessing
 import pickle
 import warnings
-import code
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor
-from functools import lru_cache
-from numba import jit, float32, int64, boolean
 from collections import deque
-from typing import List, Optional, Tuple, Union, Set, Dict
-from tqdm import tqdm
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from functools import lru_cache
+from pathlib import Path
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -20,21 +24,21 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 import torch_geometric as pyg
+from gflownet.envs.base import GFlowNetEnv
+from gflownet.envs.tree_acc_cython import (
+    batch_predict_proba_cython, batch_predict_proba_multiple_states_cython,
+    get_mask_invalid_actions_forward_cy, predict_proba_cython)
+from gflownet.utils.common import (convert_sklearn_tree_to_custom_state,
+                                   hash_tensor)
 from networkx.drawing.nx_pydot import graphviz_layout
+from numba import boolean, float32, int64, jit
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, balanced_accuracy_score
 from sklearn.preprocessing import MinMaxScaler
-from torch.distributions import Beta, Categorical, MixtureSameFamily, Uniform, Dirichlet
+from torch.distributions import (Beta, Categorical, Dirichlet,
+                                 MixtureSameFamily, Uniform)
 from torchtyping import TensorType
-
-from gflownet.envs.base import GFlowNetEnv
-from gflownet.utils.common import hash_tensor
-from gflownet.utils.common import convert_sklearn_tree_to_custom_state
-from sklearn.ensemble import RandomForestClassifier
-
-from concurrent.futures import ProcessPoolExecutor
-import multiprocessing
-
-from gflownet.envs.tree_acc_cython import predict_proba_cython, batch_predict_proba_cython, batch_predict_proba_multiple_states_cython, get_mask_invalid_actions_forward_cy
+from tqdm import tqdm
 
 
 class NodeType:
@@ -282,9 +286,9 @@ class Tree(GFlowNetEnv):
         policy_format : str
             Type of policy that will be used with the environment, either 'mlp' or 'gnn'.
             Influences which state2policy functions will be used.
-        
-        mask_redundant_choices : bool 
-            Masking (feature, threshold) tuples not splitting the hypothesis space any further. 
+
+        mask_redundant_choices : bool
+            Masking (feature, threshold) tuples not splitting the hypothesis space any further.
         """
         if X_train is not None and y_train is not None:
             self.X_train = X_train
@@ -328,7 +332,9 @@ class Tree(GFlowNetEnv):
         self.prior = prior
         if not continuous:
             if n_quantiles:
-                self.thresholds = np.quantile(self.X_train, np.linspace(0, 1, n_quantiles + 2)[1:-1])
+                self.thresholds = np.quantile(
+                    self.X_train, np.linspace(0, 1, n_quantiles + 2)[1:-1]
+                )
             else:
                 self.thresholds = np.linspace(0, 1, n_thresholds + 2)[1:-1]
             self.thresh2idx = {
@@ -437,71 +443,72 @@ class Tree(GFlowNetEnv):
         """
         n_nodes = 2**self.max_depth - 1
         tree = np.full((n_nodes + 1, Attribute.N), np.nan, dtype=float)
-        
+
         def recursive_split(node, depth, used_splits):
             if depth >= self.max_depth - 1 or np.random.random() < 0.3:  # Leaf node
                 tree[node, Attribute.TYPE] = 1
-                tree[node, Attribute.FEATURE:Attribute.ACTIVE] = -1
-            else:  
+                tree[node, Attribute.FEATURE : Attribute.ACTIVE] = -1
+            else:
                 # Internal node
                 feature = np.random.randint(0, self.n_features)
                 threshold = np.random.choice(self.thresholds)
-                
+
                 # Ensure no redundant splits
                 while (feature, threshold) in used_splits:
                     feature = np.random.randint(0, self.n_features)
                     threshold = np.random.choice(self.thresholds)
-                
+
                 tree[node, Attribute.TYPE] = 0
                 tree[node, Attribute.FEATURE] = feature
                 tree[node, Attribute.THRESHOLD] = threshold
                 tree[node, Attribute.PROBABILITY] = -1
                 tree[node, Attribute.ACTIVE] = 0
-                
+
                 # Add current split to the used splits
                 used_splits.add((feature, threshold))
-                
+
                 left_child = 2 * node + 1
                 right_child = 2 * node + 2
-                
+
                 # Recur for children with current path splits
                 recursive_split(left_child, depth + 1, used_splits.copy())
                 recursive_split(right_child, depth + 1, used_splits.copy())
-        
+
         recursive_split(0, 0, set())
-        
+
         # Set the last row (stage information)
         tree[-1, Attribute.TYPE] = 0
         return torch.tensor(tree, dtype=self.float)
 
-    
     def get_random_unmasked_terminating_states(self, n, rf_proportion=0.0, seed=None):
         """
         Generates n terminating states, alternating between random trees and trees from a random forest.
-        
+
         :param n: Total number of trees to generate
         :param rf_proportion: Proportion of trees to be generated from random forest (0 to 1)
         :param seed: Random seed for reproducibility
         """
         if seed is not None:
             np.random.seed(seed)
-        
+
         n_rf_trees = int(n * rf_proportion)
         n_random_trees = n - n_rf_trees
-        
+
         # Generate trees from random forest
         if n_rf_trees > 0:
-            rf_states = self.get_terminating_states_from_random_forest(n_rf_trees, seed=seed)
+            rf_states = self.get_terminating_states_from_random_forest(
+                n_rf_trees, seed=seed
+            )
         else:
             rf_states = []
-        
+
         # Generate random trees
         random_states = [self.generate_random_tree() for _ in range(n_random_trees)]
-        
+
         # Combine and shuffle
         combined_states = rf_states + random_states
         np.random.shuffle(combined_states)
-        
+
         return combined_states
 
     def get_terminating_states_from_random_forest(self, n, seed=None):
@@ -510,22 +517,25 @@ class Tree(GFlowNetEnv):
         """
         if seed is not None:
             np.random.seed(seed)
-        
+
         # Train a Random Forest
-        rf = RandomForestClassifier(n_estimators=n, max_depth=self.max_depth-1, random_state=seed)
+        rf = RandomForestClassifier(
+            n_estimators=n, max_depth=self.max_depth - 1, random_state=seed
+        )
         rf.fit(self.X_train, self.y_train)
-        
+
         terminating_states = []
 
         for estimator in tqdm(rf.estimators_, desc="Generating RF terminating states"):
             state = torch.tensor(
-                convert_sklearn_tree_to_custom_state(estimator.tree_, self.max_depth, thresholds=self.thresholds), 
-                dtype=self.float
+                convert_sklearn_tree_to_custom_state(
+                    estimator.tree_, self.max_depth, thresholds=self.thresholds
+                ),
+                dtype=self.float,
             )
             terminating_states.append(state.clone())
-        
-        return terminating_states[:n]
 
+        return terminating_states[:n]
 
     # TODO: Add checks for when the state space is intractable to traverse.
     def get_all_terminating_states(
@@ -538,20 +548,20 @@ class Tree(GFlowNetEnv):
         """
         if self.continuous:
             raise ValueError(f"Task intractable with continuous values!")
-    
+
         if state is None:
             state = self.state
-    
+
         initial_state = state.clone()  # Store current state of the tree
-    
+
         hashmap = {hash_tensor(state): state}
         max_depth = self.max_depth
         k = 8000
-        
-        #(self.n_features + len(self.probabilities) + len(self.thresholds)) * (
+
+        # (self.n_features + len(self.probabilities) + len(self.thresholds)) * (
         #    2 ** (max_depth - 2) + 1
-        #) + 20  # 20 used as a bound confidence window
-    
+        # ) + 20  # 20 used as a bound confidence window
+
         # Explore all possible trajectories starting from a given input state, or the tree's initial state by default.
         while k > 0:
             h = hashmap.copy()
@@ -564,18 +574,18 @@ class Tree(GFlowNetEnv):
                     if hash_tensor(state) not in hashmap:
                         hashmap[hash_tensor(state)] = state
             k -= 1
-            if k % 100 == 0: 
+            if k % 100 == 0:
                 print(k)
-        
+
         valid_states = {}
-    
+
         for key in hashmap:
             state = hashmap[key]
             if self._get_stage(state) == Stage.COMPLETE:
                 valid_states[hash_tensor(state)] = state
-    
+
         self.set_state(initial_state)  # Reset state to initial state
-    
+
         if return_hash_keys:
             return valid_states
         else:
@@ -955,78 +965,81 @@ class Tree(GFlowNetEnv):
         return super().set_state(state, done)
 
     def sample_actions_batch_continuous(
-            self,
-            policy_outputs: TensorType["n_states", "policy_output_dim"],
-            mask: Optional[TensorType["n_states", "policy_output_dim"]] = None,
-            states_from: Optional[List] = None,
-            is_backward: Optional[bool] = False,
-            sampling_method: Optional[str] = "policy",
-            temperature_logits: Optional[float] = 1.0,
-            max_sampling_attempts: Optional[int] = 10,
-        ) -> Tuple[List[Tuple], TensorType["n_states"]]:
-            """
-            Samples a batch of actions from a batch of policy outputs in the continuous mode.
-            """
-            n_states = policy_outputs.shape[0]
-            logprobs = torch.zeros(n_states, device=self.device, dtype=self.float)
-            
-            # Handle discrete actions
-            is_discrete = mask[:, self._action_index_pick_threshold]
-            actions = [None] * n_states
-            
-            if torch.any(is_discrete):
-                policy_outputs_discrete = policy_outputs[
-                    is_discrete, :self._index_continuous_policy_output
-                ]
-                actions_discrete, logprobs_discrete = super().sample_actions_batch(
-                    policy_outputs_discrete,
-                    mask[is_discrete, :self._index_continuous_policy_output],
-                    None,
-                    is_backward,
-                    sampling_method,
-                    temperature_logits,
-                    max_sampling_attempts,
-                )
-                logprobs[is_discrete] = logprobs_discrete
-                actions_discrete = iter(actions_discrete)
-            
-            if not torch.all(is_discrete):
-                # Handle continuous actions
-                is_continuous = torch.logical_not(is_discrete)
-                n_cont = is_continuous.sum()
-                policy_outputs_cont = policy_outputs[
-                    is_continuous, self._index_continuous_policy_output:
-                ]
-                
-                if sampling_method == "uniform":
-                    distr_threshold = torch.distributions.Uniform(
-                        torch.zeros(n_cont, device=self.device),
-                        torch.ones(n_cont, device=self.device),
-                    )
-                elif sampling_method == "policy":
-                    mix_logits = policy_outputs_cont[:, 0::3]
-                    mix = Categorical(logits=mix_logits)
-                    alphas = policy_outputs_cont[:, 1::3]
-                    alphas = self.beta_params_max * torch.sigmoid(alphas) + self.beta_params_min
-                    betas = policy_outputs_cont[:, 2::3]
-                    betas = self.beta_params_max * torch.sigmoid(betas) + self.beta_params_min
-                    beta_distr = Beta(alphas, betas)
-                    distr_threshold = MixtureSameFamily(mix, beta_distr)
-                
-                thresholds = distr_threshold.sample()
-                logprobs[is_continuous] = distr_threshold.log_prob(thresholds)
-                
-                actions_cont = [(ActionType.PICK_THRESHOLD, th.item()) for th in thresholds]
-                actions_cont = iter(actions_cont)
-            
-            for i in range(n_states):
-                if is_discrete[i]:
-                    actions[i] = next(actions_discrete)
-                else:
-                    actions[i] = next(actions_cont)
-            
-            return actions, logprobs
+        self,
+        policy_outputs: TensorType["n_states", "policy_output_dim"],
+        mask: Optional[TensorType["n_states", "policy_output_dim"]] = None,
+        states_from: Optional[List] = None,
+        is_backward: Optional[bool] = False,
+        sampling_method: Optional[str] = "policy",
+        temperature_logits: Optional[float] = 1.0,
+        max_sampling_attempts: Optional[int] = 10,
+    ) -> Tuple[List[Tuple], TensorType["n_states"]]:
+        """
+        Samples a batch of actions from a batch of policy outputs in the continuous mode.
+        """
+        n_states = policy_outputs.shape[0]
+        logprobs = torch.zeros(n_states, device=self.device, dtype=self.float)
 
+        # Handle discrete actions
+        is_discrete = mask[:, self._action_index_pick_threshold]
+        actions = [None] * n_states
+
+        if torch.any(is_discrete):
+            policy_outputs_discrete = policy_outputs[
+                is_discrete, : self._index_continuous_policy_output
+            ]
+            actions_discrete, logprobs_discrete = super().sample_actions_batch(
+                policy_outputs_discrete,
+                mask[is_discrete, : self._index_continuous_policy_output],
+                None,
+                is_backward,
+                sampling_method,
+                temperature_logits,
+                max_sampling_attempts,
+            )
+            logprobs[is_discrete] = logprobs_discrete
+            actions_discrete = iter(actions_discrete)
+
+        if not torch.all(is_discrete):
+            # Handle continuous actions
+            is_continuous = torch.logical_not(is_discrete)
+            n_cont = is_continuous.sum()
+            policy_outputs_cont = policy_outputs[
+                is_continuous, self._index_continuous_policy_output :
+            ]
+
+            if sampling_method == "uniform":
+                distr_threshold = torch.distributions.Uniform(
+                    torch.zeros(n_cont, device=self.device),
+                    torch.ones(n_cont, device=self.device),
+                )
+            elif sampling_method == "policy":
+                mix_logits = policy_outputs_cont[:, 0::3]
+                mix = Categorical(logits=mix_logits)
+                alphas = policy_outputs_cont[:, 1::3]
+                alphas = (
+                    self.beta_params_max * torch.sigmoid(alphas) + self.beta_params_min
+                )
+                betas = policy_outputs_cont[:, 2::3]
+                betas = (
+                    self.beta_params_max * torch.sigmoid(betas) + self.beta_params_min
+                )
+                beta_distr = Beta(alphas, betas)
+                distr_threshold = MixtureSameFamily(mix, beta_distr)
+
+            thresholds = distr_threshold.sample()
+            logprobs[is_continuous] = distr_threshold.log_prob(thresholds)
+
+            actions_cont = [(ActionType.PICK_THRESHOLD, th.item()) for th in thresholds]
+            actions_cont = iter(actions_cont)
+
+        for i in range(n_states):
+            if is_discrete[i]:
+                actions[i] = next(actions_discrete)
+            else:
+                actions[i] = next(actions_cont)
+
+        return actions, logprobs
 
     def sample_actions_batch(
         self,
@@ -1196,24 +1209,24 @@ class Tree(GFlowNetEnv):
         for all batch states, replaces the NaN values in states by -2's.
         """
         # batch_size = states.shape[0]
-        
+
         # # Replace NaN with -2 in one operation
         # states = torch.where(torch.isnan(states), torch.tensor(-2., device=self.device), states)
-        
+
         # # Get leaf paths for all states
         # state_paths = self.get_leaf_paths(states)
-        
+
         # # Create a tensor to hold all leaf paths
         # max_leaves = max(len(paths) for paths in state_paths)
         # leaf_paths = torch.full((batch_size, max_leaves, self.max_depth, 6), -2, device=self.device)
-        
+
         # for i, paths in enumerate(state_paths):
         #     for j, path in enumerate(paths):
         #         for k, node in enumerate(path):
         #             sign = torch.tensor([node % 2], device=self.device)
         #             activity_features = states[i, node, -1][None,]
         #             leaf_paths[i, j, k] = torch.cat((states[i, node, :-1], sign, activity_features))
-        
+
         # return leaf_paths.flatten(-2)
 
         state_paths = Tree.get_leaf_paths(states)
@@ -1355,7 +1368,7 @@ class Tree(GFlowNetEnv):
         """
         if states.ndim == 2:
             states = states.unsqueeze(0)
-        
+
         leaves = torch.where(states[:, :-1, Attribute.TYPE] == NodeType.CLASSIFIER)
         return [leaves[1][leaves[0] == i].tolist() for i in range(states.shape[0])]
 
@@ -1367,7 +1380,7 @@ class Tree(GFlowNetEnv):
         return torch.where(state[:-1, Attribute.TYPE] == NodeType.CLASSIFIER)[
             0
         ].tolist()
-    
+
     @staticmethod
     def find_active(state: torch.Tensor) -> int:
         """
@@ -1446,7 +1459,7 @@ class Tree(GFlowNetEnv):
         return self.thresh2idx[np.round(threshold, 2)]
 
     # def get_mask_invalid_actions_forward(self, state=None, done=None):
-        
+
     #     if state is None:
     #         state = self.state
     #     if done is None:
@@ -1460,7 +1473,7 @@ class Tree(GFlowNetEnv):
     #     state_np = state.cpu().numpy().astype(np.float32)
     #     stage_np = np.array(stage.item(), dtype=np.int64)
     #     thresholds_np = np.array(self.thresholds, dtype=np.float64)
-    #     try: 
+    #     try:
     #         return get_mask_invalid_actions_forward_cy(
     #             state_np, stage_np, self.n_nodes, self.policy_output_dim,
     #             self._action_index_pick_leaf, self._action_index_eos,
@@ -1472,7 +1485,7 @@ class Tree(GFlowNetEnv):
     #     except Exception as e:
     #         print(e)
     #         code.interact(local=locals())
-    
+
     def get_mask_invalid_actions_forward(
         self, state: Optional[torch.Tensor] = None, done: Optional[bool] = None
     ) -> List[bool]:
@@ -1539,10 +1552,12 @@ class Tree(GFlowNetEnv):
                 self._action_index_pick_left_child_probability,
             ):
                 mask[idx] = False  # Default to allowing all actions.
-            
-            if self.mask_redundant_choices: 
+
+            if self.mask_redundant_choices:
                 k = self.find_active(state)  # Current active node index
-                feature_chosen = state[k, Attribute.FEATURE].item()  # The feature on which the current node will split
+                feature_chosen = state[
+                    k, Attribute.FEATURE
+                ].item()  # The feature on which the current node will split
                 path = []  # Store tuples of (threshold, direction based on parity)
 
                 # Traverse from current node to root and collect thresholds with directions based on parity
@@ -1550,9 +1565,13 @@ class Tree(GFlowNetEnv):
                     node_feature = state[k, Attribute.FEATURE].item()
                     if node_feature == feature_chosen:
                         node_threshold = state[k, Attribute.THRESHOLD].item()
-                        direction = 'left' if k % 2 == 1 else 'right'  # Odd index -> left child, Even index -> right child
+                        direction = (
+                            "left" if k % 2 == 1 else "right"
+                        )  # Odd index -> left child, Even index -> right child
                         path.append((node_threshold, direction))
-                    k = (k - 1) // 2  # Get parent index in a binary tree stored in an array
+                    k = (
+                        k - 1
+                    ) // 2  # Get parent index in a binary tree stored in an array
 
                 # Apply masking based on previously used thresholds along the path
                 if path:
@@ -1560,18 +1579,25 @@ class Tree(GFlowNetEnv):
                         self._action_index_pick_threshold + 1,
                         self._action_index_pick_left_child_probability - 1,
                     ):
-                        current_threshold = self.thresholds[idx - self._action_index_pick_threshold]
+                        current_threshold = self.thresholds[
+                            idx - self._action_index_pick_threshold
+                        ]
                         # Mask thresholds that contradict the path constraints
                         for threshold, direction in path:
-                            if threshold < 0: # Handling -1 fillers
+                            if threshold < 0:  # Handling -1 fillers
                                 continue
-                            if (direction == 'left' and current_threshold >= threshold) or \
-                            (direction == 'right' and current_threshold <= threshold) or \
-                            (current_threshold == threshold):
+                            if (
+                                (direction == "left" and current_threshold >= threshold)
+                                or (
+                                    direction == "right"
+                                    and current_threshold <= threshold
+                                )
+                                or (current_threshold == threshold)
+                            ):
                                 mask[idx] = True
                                 break
 
-        elif stage == Stage.THRESHOLD: 
+        elif stage == Stage.THRESHOLD:
             # Threshold was picked, only picking the left probability actions are valid.
             for idx in range(
                 self._action_index_pick_left_child_probability,
@@ -1937,16 +1963,16 @@ class Tree(GFlowNetEnv):
         X: npt.NDArray,
         return_k: bool = False,
         k: int = 0,
-        dirichlet: bool = False
+        dirichlet: bool = False,
     ) -> Union[Union[float, np.ndarray], Tuple[Union[float, np.ndarray], int]]:
-    
+
         states_np = states.cpu().numpy()
         if states_np.ndim == 2:
             states_np = states_np[None, :]
-        
-        if not states_np.flags['C_CONTIGUOUS']:
+
+        if not states_np.flags["C_CONTIGUOUS"]:
             states_np = np.ascontiguousarray(states_np)
-        
+
         warnings.filterwarnings("ignore", category=RuntimeWarning)
         node_types = states_np[:, :, Attribute.TYPE].astype(np.int32)
         features = states_np[:, :, Attribute.FEATURE].astype(np.int32)
@@ -1954,27 +1980,35 @@ class Tree(GFlowNetEnv):
         probabilities = states_np[:, :, Attribute.PROBABILITY].astype(states_np.dtype)
         if probabilities.ndim == 2:
             probabilities = probabilities[:, :, None]
-        
+
         if X.ndim == 1:
             X = X.astype(states_np.dtype)[None,]
-        else: 
+        else:
             X = X.astype(states_np.dtype)
-        
+
         attribute_n = Attribute.N
-        try: 
-            proba, node_index = batch_predict_proba_multiple_states_cython(states_np, X, node_types, features, thresholds, probabilities, attribute_n)
+        try:
+            proba, node_index = batch_predict_proba_multiple_states_cython(
+                states_np,
+                X,
+                node_types,
+                features,
+                thresholds,
+                probabilities,
+                attribute_n,
+            )
         except Exception as e:
             print(e)
             code.interact(local=dict(globals(), **locals()))
-        
+
         if not dirichlet:
             proba = proba  # No need to extract, as it's already a scalar
-        
+
         if return_k:
             return proba, node_index
         else:
             return proba
-    
+
     @staticmethod
     def predict(
         states: torch.Tensor,
@@ -1984,7 +2018,7 @@ class Tree(GFlowNetEnv):
         k: int = 0,
         dirichlet: bool = False,
     ) -> Union[int, Tuple[int, int]]:
-        
+
         output = Tree.predict_proba(
             states, X, return_k=return_k, k=k, dirichlet=dirichlet
         )
@@ -2141,7 +2175,7 @@ class Tree(GFlowNetEnv):
 
         for i, (state, score) in enumerate(zip(states, scores)):
             Tree.plot(state, path / f"tree_{i}_{score:.4f}.png")
-    
+
     def _sample_proba_dirichlet(self, states: torch.Tensor, prior=None, test=False):
         """
         Takes a batch of states and replaces their leaves' probabilities
@@ -2156,7 +2190,7 @@ class Tree(GFlowNetEnv):
         y = self.y_test if test and self.X_test is not None else self.y_train
 
         # Batch find leaves for all states
-        state_leaves = Tree._batch_find_leaves(states)  
+        state_leaves = Tree._batch_find_leaves(states)
 
         # Perform batch prediction for all states and all data points
         _, nodes = Tree.predict(states, X, return_k=True, dirichlet=True)
@@ -2165,40 +2199,68 @@ class Tree(GFlowNetEnv):
         # Initialize counters for all states
         max_leaves = max(len(leaves) for leaves in state_leaves)
         n_states = states.shape[0]
-        leaf_success_counter = torch.zeros((n_states, max_leaves, self.n_classes), dtype=int, device=states.device)
-        leaf_total_flow = torch.zeros((n_states, max_leaves), dtype=int, device=states.device)
+        leaf_success_counter = torch.zeros(
+            (n_states, max_leaves, self.n_classes), dtype=int, device=states.device
+        )
+        leaf_total_flow = torch.zeros(
+            (n_states, max_leaves), dtype=int, device=states.device
+        )
 
         # Create a mapping from node indices to leaf indices for each state
-        leaf_mapping = torch.full((n_states, states.shape[1]), -1, dtype=int, device=states.device)
+        leaf_mapping = torch.full(
+            (n_states, states.shape[1]), -1, dtype=int, device=states.device
+        )
         for i, leaves in enumerate(state_leaves):
             leaf_mapping[i, leaves] = torch.arange(len(leaves), device=states.device)
 
         # Update counters based on predictions
-        state_indices = torch.arange(n_states, device=states.device)[:, None].expand_as(torch.tensor(nodes))
+        state_indices = torch.arange(n_states, device=states.device)[:, None].expand_as(
+            torch.tensor(nodes)
+        )
         leaf_indices = leaf_mapping[state_indices, nodes]
         valid_leaves = leaf_indices != -1
-        
-        leaf_total_flow.index_put_((state_indices[valid_leaves], leaf_indices[valid_leaves]), 
-                                torch.ones(1, dtype=int, device=states.device), accumulate=True)
-        
+
+        leaf_total_flow.index_put_(
+            (state_indices[valid_leaves], leaf_indices[valid_leaves]),
+            torch.ones(1, dtype=int, device=states.device),
+            accumulate=True,
+        )
+
         y_expanded = torch.from_numpy(y)[None, :].expand(n_states, -1)
-        leaf_success_counter.index_put_((state_indices[valid_leaves], leaf_indices[valid_leaves], y_expanded[valid_leaves]), 
-                                        torch.ones(1, dtype=int, device=states.device), accumulate=True)
+        leaf_success_counter.index_put_(
+            (
+                state_indices[valid_leaves],
+                leaf_indices[valid_leaves],
+                y_expanded[valid_leaves],
+            ),
+            torch.ones(1, dtype=int, device=states.device),
+            accumulate=True,
+        )
 
         # Create new states with space for class probabilities
-        new_states = torch.cat([
-            states,
-            torch.full((n_states, states.shape[1], self.n_classes), torch.nan, device=states.device)
-        ], dim=2)
+        new_states = torch.cat(
+            [
+                states,
+                torch.full(
+                    (n_states, states.shape[1], self.n_classes),
+                    torch.nan,
+                    device=states.device,
+                ),
+            ],
+            dim=2,
+        )
 
         # Sample from Dirichlet distribution for each leaf in each state
         prior_tensor = torch.tensor(prior, device=states.device, dtype=torch.float32)
         for i, leaves in enumerate(state_leaves):
-            n, k = leaf_total_flow[i, :len(leaves)], leaf_success_counter[i, :len(leaves)]
-            dirichlet_params = k.float() + prior_tensor  
+            n, k = (
+                leaf_total_flow[i, : len(leaves)],
+                leaf_success_counter[i, : len(leaves)],
+            )
+            dirichlet_params = k.float() + prior_tensor
             dirichlet = Dirichlet(dirichlet_params)
             samples = dirichlet.sample()
-            new_states[i, leaves, Attribute.N:] = samples.to(new_states.dtype)
+            new_states[i, leaves, Attribute.N :] = samples.to(new_states.dtype)
 
         return new_states
 
@@ -2228,7 +2290,9 @@ class Tree(GFlowNetEnv):
             samples = torch.stack(samples, dim=0)
             train_samples = self._sample_proba_dirichlet(samples, test=False)
 
-        result["mean_n_nodes"] = np.mean([Tree.get_n_nodes(state) for state in train_samples])
+        result["mean_n_nodes"] = np.mean(
+            [Tree.get_n_nodes(state) for state in train_samples]
+        )
         train_predictions = Tree._predict_samples(
             train_samples, self.X_train, dirichlet=self.dirichlet
         )
@@ -2249,10 +2313,9 @@ class Tree(GFlowNetEnv):
             order = np.argsort(accuracies)[::-1]
             top_k_indices = order[: self.test_args["top_k_trees"]]
 
-
             # Plot trees.
             Tree._plot_trees(
-                [train_samples[i][:, :-self.n_classes] for i in top_k_indices],
+                [train_samples[i][:, : -self.n_classes] for i in top_k_indices],
                 accuracies[top_k_indices],
                 self.test_iteration,
             )
@@ -2275,7 +2338,7 @@ class Tree(GFlowNetEnv):
             self.test_iteration += 1
 
         if self.X_test is not None:
-            
+
             if self.dirichlet:
                 test_samples = self._sample_proba_dirichlet(samples, test=True)
             test_predictions = Tree._predict_samples(
@@ -2298,6 +2361,6 @@ class Tree(GFlowNetEnv):
                 )
                 for k, v in top_1_scores.items():
                     result[f"test_top_1_{k}"] = v
-        
+
         # result.update(self.bayesian_model_averaging(samples, test=(self.X_test is not None)))
         return result

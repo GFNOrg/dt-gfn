@@ -1,8 +1,7 @@
 import numpy as np
+from dpdt.utils.datasets import Data
 from scipy.stats import entropy
 from sklearn.feature_selection import f_classif
-
-from dpdt.utils.datasets import Data
 
 
 def info_gain(data: Data, split_feature: int, split_value: float, entr_parent: float):

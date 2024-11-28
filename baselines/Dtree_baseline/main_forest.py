@@ -1,13 +1,16 @@
 import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from ucimlrepo import fetch_ucirepo
 from dtree_source.dtree import DtreeRandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from ucimlrepo import fetch_ucirepo
+
 
 def run_dtree_forest_on_dataset(X, y, n_estimators=10, seed=42):
     np.random.seed(seed)
     # Split the data into training and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=seed)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=seed
+    )
 
     # Standardize the features
     scaler = StandardScaler()
@@ -27,10 +30,10 @@ def run_dtree_forest_on_dataset(X, y, n_estimators=10, seed=42):
         b=1.0,
         alpha=0.01,
         n_jobs=-1,  # Use all available cores
-        max_features='sqrt',
-        bootstrap=True
+        max_features="sqrt",
+        bootstrap=True,
     )
-    
+
     try:
         forest.fit(X_train_scaled, y_train)
     except Exception as e:
@@ -48,11 +51,9 @@ def run_dtree_forest_on_dataset(X, y, n_estimators=10, seed=42):
         print(f"Error during prediction: {str(e)}")
         return None
 
+
 def experiment_on_datasets(seeds, n_estimators=10):
-    datasets = [
-        (850, "Raisin"),
-        (15, "BCW")
-    ]
+    datasets = [(850, "Raisin"), (15, "BCW")]
 
     results = {}
 
@@ -69,28 +70,33 @@ def experiment_on_datasets(seeds, n_estimators=10):
         if y.dtype == object:
             le = LabelEncoder()
             y = le.fit_transform(y)
-        
+
         accuracies = []
         for seed in seeds:
             print(f"\nRunning with seed {seed}")
-            accuracy = run_dtree_forest_on_dataset(X, y, n_estimators=n_estimators, seed=seed)
+            accuracy = run_dtree_forest_on_dataset(
+                X, y, n_estimators=n_estimators, seed=seed
+            )
             if accuracy is not None:
                 accuracies.append(accuracy)
-        
+
         if accuracies:
             mean_accuracy = np.mean(accuracies)
             std_accuracy = np.std(accuracies)
-            
+
             results[dataset_name] = {
                 "mean_accuracy": mean_accuracy,
-                "std_accuracy": std_accuracy
+                "std_accuracy": std_accuracy,
             }
-            
-            print(f"{dataset_name} - Mean Accuracy: {mean_accuracy:.4f}, Std: {std_accuracy:.4f}")
+
+            print(
+                f"{dataset_name} - Mean Accuracy: {mean_accuracy:.4f}, Std: {std_accuracy:.4f}"
+            )
         else:
             print(f"No valid accuracies for {dataset_name}")
-    
+
     return results
+
 
 # Run the experiments
 if __name__ == "__main__":
@@ -103,4 +109,6 @@ if __name__ == "__main__":
     # Print final results
     print("\nFinal Results:")
     for dataset, metrics in results.items():
-        print(f"{dataset} - Mean Accuracy: {metrics['mean_accuracy']:.4f}, Std: {metrics['std_accuracy']:.4f}")
+        print(
+            f"{dataset} - Mean Accuracy: {metrics['mean_accuracy']:.4f}, Std: {metrics['std_accuracy']:.4f}"
+        )
