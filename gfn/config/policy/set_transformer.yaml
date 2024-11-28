@@ -1,0 +1,20 @@
+# @package policy
+_target_: gflownet.policy.set_transformer.TreeSetPolicy 
+
+shared:
+  type: set_transformer
+  backbone_args:
+    dim_input: 64
+    num_outputs: 1
+    dim_hidden: 128
+    num_heads: 4
+    num_inds: 32
+    ln: true
+  policy_args:
+    num_attributes: 6
+    embedding_dim: 64
+
+forward: null
+
+backward:
+  shared_weights: false
