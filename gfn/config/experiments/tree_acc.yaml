@@ -17,7 +17,7 @@ SAVE: False
 env:
   _target_: gflownet.envs.tree_acc.Tree 
   dataset: iris 
-  split_seed: 2 
+  split_seed: 1
   data_path: ${user.data.root}/${env.dataset}/${env.dataset}_${env.split_seed}.csv # Add desired data path
   max_depth: 3
   continuous: False
