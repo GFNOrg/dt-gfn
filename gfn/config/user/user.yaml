@@ -1,0 +1,5 @@
+logdir:
+  root: # Add log directory
+
+data: 
+  root: # Add data directory
