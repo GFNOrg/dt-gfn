@@ -1,0 +1,59 @@
+_target_: gflownet.gflownet.GFlowNetAgent
+# Random seeds
+seed: 0
+# Optimizer
+optimizer:
+  # Loss function
+  loss: trajectorybalance
+  # Learning rates
+  lr: 0.0001
+  lr_decay_period: 1000000
+  lr_decay_gamma: 0.5
+  method: adam
+  # Threshold loss for early stopping
+  early_stopping: 0.0
+  # Coefficient for exponential moving average
+  ema_alpha: 0.5
+  # Optimizer: adam, sgd
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  # Momentum for SGD
+  sgd_momentum: 0.9
+  # Number of trajectories of each kind
+  batch_size:
+    # Forward on-policy (possibly tempered and/or with random actions)
+    forward: 10
+    # Backward from training set
+    backward_dataset: 0
+    # Backward from replay buffer
+    backward_replay: 0
+  # Train to sample ratio
+  train_to_sample_ratio: 1
+  # Number of training iterations
+  n_train_steps: 5000
+  # From original implementation
+  bootstrap_tau: 0.0
+  clip_grad_norm: 0.0
+# State flow modelling
+state_flow: null
+# If True, compute rewards in batches
+batch_reward: True
+# Force zero probability of sampling invalid actions
+mask_invalid_actions: True
+# Temperature for the logits /= temperature_logits
+temperature_logits: 1.0
+# Percentage of random actions
+random_action_prob: 0.0
+# Percentage of trajectories in a batch from an empirical distribution
+pct_offline: 0.0
+# Replay buffer
+replay_capacity: 0
+replay_sampling: permutation
+# Train data set backward sampling
+train_sampling: permutation
+num_empirical_loss: 200000
+oracle:
+    # Number of samples for oracle metrics
+    n: 500
+sample_only: False
+active_learning: False
