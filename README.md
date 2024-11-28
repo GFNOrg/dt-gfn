@@ -11,7 +11,7 @@ cd gfn
 ./setup_all.sh
 ````
 
-To setup the cython files, please make sure to run 
+To setup the cython files, please make sure to run:
 ````
 cd gfn
 python setup.py
