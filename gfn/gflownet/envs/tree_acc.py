@@ -1,11 +1,3 @@
-import warnings
-
-warnings.filterwarnings(
-    "ignore",
-    category=UserWarning,
-    message="A single label was found in 'y_true' and 'y_pred'.",
-)
-
 import code
 import multiprocessing
 import pickle
@@ -1458,34 +1450,6 @@ class Tree(GFlowNetEnv):
     def _get_thresh_idx(self, threshold: float) -> int:
         return self.thresh2idx[np.round(threshold, 2)]
 
-    # def get_mask_invalid_actions_forward(self, state=None, done=None):
-
-    #     if state is None:
-    #         state = self.state
-    #     if done is None:
-    #         done = self.done
-
-    #     if done:
-    #         return [True] * self.policy_output_dim
-
-    #     stage = self._get_stage(state)
-
-    #     state_np = state.cpu().numpy().astype(np.float32)
-    #     stage_np = np.array(stage.item(), dtype=np.int64)
-    #     thresholds_np = np.array(self.thresholds, dtype=np.float64)
-    #     try:
-    #         return get_mask_invalid_actions_forward_cy(
-    #             state_np, stage_np, self.n_nodes, self.policy_output_dim,
-    #             self._action_index_pick_leaf, self._action_index_eos,
-    #             self._action_index_pick_leaf_probability, self._action_index_pick_feature,
-    #             self._action_index_pick_threshold, self._action_index_pick_left_child_probability,
-    #             self._action_index_pick_right_child_probability, self._action_index_pick_triplet,
-    #             self.continuous, self.mask_redundant_choices, thresholds_np
-    #         ).tolist()
-    #     except Exception as e:
-    #         print(e)
-    #         code.interact(local=locals())
-
     def get_mask_invalid_actions_forward(
         self, state: Optional[torch.Tensor] = None, done: Optional[bool] = None
     ) -> List[bool]:
@@ -2362,5 +2326,4 @@ class Tree(GFlowNetEnv):
                 for k, v in top_1_scores.items():
                     result[f"test_top_1_{k}"] = v
 
-        # result.update(self.bayesian_model_averaging(samples, test=(self.X_test is not None)))
         return result
