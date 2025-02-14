@@ -1,6 +1,6 @@
 # **Learning Decision Trees as Amortized Structure Inference** #
 
-![MDP Visualization](./assets/mdp.png)
+<img src="./assets/mdp.png" width="100%">
 
 ## **Initial setup** ##
 For the inital setup, simply follow these steps: 
