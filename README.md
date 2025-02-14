@@ -1,6 +1,6 @@
-Accompanying code for Amortized Decision Tree Sampling with GFlowNets.
+# **Learning Decision Trees as Amortized Structure Inference** #
 
-Code based on the excellent GFlowNet code base available at: https://github.com/alexhernandezgarcia/gflownet
+![MDP Visualization](./assets/mdp.pdf) 
 
 ## **Initial setup** ##
 For the inital setup, simply follow these steps: 
