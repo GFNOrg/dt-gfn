@@ -7,14 +7,14 @@
 For the inital setup, simply follow these steps: 
 
 ````
-git clone git@github.com:MoMahfoud/RF-GFN.git
+git clone git@github.com:MoMahfoud/DT-GFN.git
 cd gfn
 pip install -r requirements.txt
 ````
 
 To setup the cython files, please make sure to run:
 ````
-cd gfn
+cd gflownet
 python setup.py build_ext --inplace
 ````
 
