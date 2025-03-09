@@ -1,0 +1,10 @@
+numpy
+scipy
+scikit-learn
+binarytree
+pandas
+gurobipy
+matplotlib
+cython
+stable-baselines3
+./dpdt_source/

@@ -1,7 +1,7 @@
 # **Learning Decision Trees as Amortized Structure Inference** #
 
 ## **Illustration** ## 
-<img src="assets/mdp.svg" alt="Illustration- Learning a decision tree as a Markov decision process." style="max-width: 100%; height: auto;">
+<img src="assets/mdp.svg" alt="Illustration- Learning a decision tree as a Markov decision process." style="max-width: 200%; height: auto;">
 
 ## **Initial setup** ##
 For the inital setup, simply follow these steps: 
@@ -9,13 +9,13 @@ For the inital setup, simply follow these steps:
 ````
 git clone git@github.com:MoMahfoud/RF-GFN.git
 cd gfn
-./setup_all.sh
+pip install -r requirements.txt
 ````
 
 To setup the cython files, please make sure to run:
 ````
 cd gfn
-python setup.py
+python setup.py build_ext --inplace
 ````
 
 ## **Quickstart** ## 
@@ -30,4 +30,8 @@ To make sure everything works seamlessly, you might want to use the following co
 HYDRA_FULL_ERROR=1 python main.py +experiments=tree_acc
 ````
 
+If tree plotting with Graphiz is an issue, either make sure to install it or use the following code:
+````
+HYDRA_FULL_ERROR=1 python main.py +experiments=tree_acc ++env.test_args.top_k_trees=0
+````
 

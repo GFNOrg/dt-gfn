@@ -1,0 +1,5 @@
+scipy
+scikit-learn
+numpy
+binarytree
+cython
