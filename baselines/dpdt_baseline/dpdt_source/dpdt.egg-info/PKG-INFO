@@ -1,8 +1,0 @@
-Metadata-Version: 2.1
-Name: dpdt
-Version: 4.8
-Requires-Dist: scipy
-Requires-Dist: scikit-learn
-Requires-Dist: numpy
-Requires-Dist: binarytree
-Requires-Dist: cython
