@@ -7,7 +7,7 @@
 For the inital setup, simply follow these steps: 
 
 ````
-git clone git@github.com:MoMahfoud/DT-GFN.git
+git clone https://github.com/GFNOrg/dt-gfn.git
 cd gfn
 pip install -r requirements.txt
 ````
