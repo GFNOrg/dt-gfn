@@ -1,7 +1,9 @@
 # **Learning Decision Trees as Amortized Structure Inference** #
 
 ## **Illustration** ## 
-<img src="assets/mdp.svg" alt="Illustration- Learning a decision tree as a Markov decision process." style="max-width: 200%; height: auto;">
+<p align="center">
+  <img src="assets/mdp.svg" alt="Illustration- Learning a decision tree as a Markov decision process." style="max-width: 200%; height: auto;">
+</p>
 
 ## **Initial setup** ##
 For the inital setup, simply follow these steps: 
