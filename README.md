@@ -1,5 +1,9 @@
 # **Learning Decision Trees as Amortized Structure Inference** #
 
+This repository contains code for [Learning decision trees as amortized structure inference](https://arxiv.org/abs/2503.06985).
+
+It is largely based on https://github.com/alexhernandezgarcia/gflownet.
+
 ## **Illustration** ## 
 <p align="center">
   <img src="assets/mdp.svg" alt="Illustration- Learning a decision tree as a Markov decision process." style="max-width: 200%; height: auto;">
